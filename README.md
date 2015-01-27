@@ -38,10 +38,7 @@ You will need gcc and libblkid(-devel) installed to build console_auth and the u
 
 - The provided RPM spec file should take care of these things for RHEL6/7
 
-- Add `dracutmodules+="dropbear-sshd"` to dracut.conf
-  (will pull in "network" module as dependency).
-
-- Check out supported dracut.conf options below.
+- Check out supported earlyssh.conf options below.
   With no extra options, ad-hoc server rsa key will be generated (and its
   fingerprint/bbcode will be printed to dracut log),
   `/root/.ssh/authorized_keys` will be used for ACL.
@@ -66,11 +63,11 @@ On boot, sshd will be started with:
 
 - User (to allow login as-): root
 
-- Host key: ${dropbear_rsa_key} (dracut.conf) or generated
+- Host key: ${dropbear_rsa_key} (earlyssh.conf) or generated
   (fingerprint echoed during generation and to console on sshd start).
   DSA keys are not supported (and shouldn't generally be used with ssh).
 
-- Client key(s): ${dropbear_acl} (dracut.conf) or `/root/.ssh/authorized_keys`
+- Client key(s): ${dropbear_acl} (earlyssh.conf) or `/root/.ssh/authorized_keys`
 
 - Password auth and port forwarding explicitly disabled.
 
@@ -149,11 +146,13 @@ and failing that, attempt to kill cryptroot-ask. On RHEL6 & 7, this aborts the b
 password request processes and allows the boot process to proceed. 
 Note that the plymouth splash screen on RHEL6 (if you happen to be watching the console...) will still appear to ask for your password, but this is an artificat.  Disable plymouth (rhgb command line) if this annoys you.
 
-### dracut.conf parameters
+### earlyssh.conf parameters
 
 - dropbear_port
 
 - dropbear_rsa_key
+
+- dropbear_ecdsa_key
 
 - dropbear_acl
 
