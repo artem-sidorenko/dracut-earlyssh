@@ -38,6 +38,7 @@ install() {
 
 	# Defaults
 	[[ -z "${dropbear_rsa_key}" ]] && dropbear_rsa_key=GENERATE
+	[[ -z "${dropbear_ecdsa_key}" ]] && dropbear_ecdsa_key=GENERATE
 	[[ -z "${dropbear_port}" ]] && dropbear_port=2222
 	[[ -z "${dropbear_acl}" ]] && dropbear_acl=/root/.ssh/authorized_keys
 
@@ -53,7 +54,8 @@ install() {
 	inst ${moddir}/unlock-reap-success.sh /sbin/unlock-reap-success
 
 	# Don't bother with DSA, as it's either much more fragile or broken anyway
-	local rsa_key="$tmp"/key
+	local rsa_key="$tmp"/rsa_key
+	local ecdsa_key="$tmp"/ecdsa_key
 	
 	case ${dropbear_rsa_key} in
 		GENERATE )
@@ -92,6 +94,43 @@ install() {
 			cp "${dropbear_rsa_key}".pub ${rsa_key}.pub
 	esac
 
+	case ${dropbear_ecdsa_key} in
+                GENERATE )
+                        # I assume ssh-keygen must be better at producing good rsa keys than
+                        #  dropbearkey, so use that one. It's interactive-only, hence some hacks.
+
+                        rm -f "${ecdsa_key}" "${ecdsa_key}".ossh
+                        mkfifo "$tmp"/keygen.fifo
+                        script -q -c "ssh-keygen -q -t ecdsa -f '${ecdsa_key}'; echo >'${tmp}/keygen.fifo'"\
+                                /dev/null </dev/null >"$tmp"/keygen.log 2>&1
+                        : <"$tmp"/keygen.fifo
+                        [[ -f "${ecdsa_key}" && -f "${ecdsa_key}".pub ]] || {
+                                derror "Failed to generate ad-hoc ecdsa key, see: ${tmp}/keygen.log"
+                                return 255
+                        }
+
+                        mv "${ecdsa_key}" "${ecdsa_key}".ossh
+                        dinfo "Generated ad-hoc ecdsa key for dropbear sshd in initramfs"
+                        ;;
+                SYSTEM )
+                        local sys_ecdsa_key=/etc/ssh/ssh_host_ecdsa_key
+                        [[ -f ${sys_ecdsa_key} && -f ${sys_ecdsa_key} ]] || {
+                                derror "Cannot locate a system SSH host key in ${sys_ecdsa_key}"
+                                derror "Start OpenSSH for the first time or use ssh-keygen to generate one"
+                                return 255
+                        }
+                        cp ${sys_ecdsa_key} ${ecdsa_key}.ossh
+                        cp ${sys_ecdsa_key}.pub ${ecdsa_key}.pub
+                        ;;
+                * )
+                        [[ -f ${dropbear_ecdsa_key} && -f ${dropbear_ecdsa_key}.pub ]] || {
+                                derror "User specified dropbear ECDSA location ${dropbear_ecdsa_key} or associated public key not found"
+                                return 255
+                        }
+                        cp "${dropbear_ecdsa_key}" ${ecdsa_key}
+                        cp "${dropbear_ecdsa_key}".pub ${ecdsa_key}.pub
+        esac
+
 	[[ -f ${rsa_key}.ossh ]] && {
 		# Oh, wow, another tool that doesn't have "batch mode" in the same script.
 		# It's deeply concerning that security people don't seem to grasp such basic concepts.
@@ -99,12 +138,21 @@ install() {
 			|| { derror "dropbearconvert failed"; rm -rf "$tmp"; return 255; }
 	}
 
+	[[ -f ${ecdsa_key}.ossh ]] && {
+                # Oh, wow, another tool that doesn't have "batch mode" in the same script.
+                # It's deeply concerning that security people don't seem to grasp such basic concepts.
+                dropbearconvert openssh dropbear ${ecdsa_key}.ossh "${ecdsa_key}" >/dev/null 2>&1\
+                        || { derror "dropbearconvert failed"; rm -rf "$tmp"; return 255; }
+        }
+
 	local key_fp=$(ssh-keygen -l -f "${rsa_key}".pub)
 	local key_bb=$(ssh-keygen -B -f "${rsa_key}".pub)
 	dinfo "Boot SSH key parameters:"
 	dinfo "  fingerprint: ${key_fp}"
 	dinfo "  bubblebabble: ${key_bb}"
+	#TBD ECDSA finderprints
 	inst "${rsa_key}" /etc/dropbear/dropbear_rsa_host_key
+	inst "${ecdsa_key}" /etc/dropbear/dropbear_ecdsa_host_key
 
 	inst "${dropbear_acl}" ${ROOTHOME}/.ssh/authorized_keys
 
